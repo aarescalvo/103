@@ -674,3 +674,22 @@ Stage Summary:
 - Push a GitHub: https://github.com/aarescalvo/103
 - Commit: 95a17d1
 
+---
+Task ID: 38
+Agent: main
+Task: Corregir error de importación de RindesTropaModule
+
+Work Log:
+- Identificado error en compilación: "RindesTropaModule is not exported from '@/components/rindes-tropa'"
+- El componente tenía tanto named export como default export
+- Solución: Cambiado import de named a default en page.tsx
+- Antes: `import { RindesTropaModule } from '@/components/rindes-tropa'`
+- Después: `import RindesTropaModule from '@/components/rindes-tropa'`
+- Lint pasado sin errores
+- Servidor funcionando correctamente (GET / 200)
+
+Stage Summary:
+- Error de importación corregido
+- Sistema compilando sin warnings
+- Listo para push a GitHub
+
