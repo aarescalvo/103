@@ -63,7 +63,7 @@ interface Operador {
   rol?: string
 }
 
-export function RindesTropa({ operador }: { operador: Operador }) {
+function RindesTropaModule({ operador }: { operador: Operador }) {
   const [loading, setLoading] = useState(true)
   const [rindes, setRindes] = useState<RindeTropa[]>([])
   const [estadisticas, setEstadisticas] = useState<EstadisticasGenerales | null>(null)
@@ -545,4 +545,4 @@ export function RindesTropa({ operador }: { operador: Operador }) {
   )
 }
 
-export default RindesTropa
+export default RindesTropaModule

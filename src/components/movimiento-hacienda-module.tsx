@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
-  Beef, Search, Filter, Plus, Eye, Edit, Trash2, 
-  Lock, Save, ArrowRight, Calendar, Warehouse, Skull,
-  Move, AlertTriangle, CheckCircle, RefreshCw
+  Beef, Search, Eye, Edit, Warehouse, Skull,
+  Move, AlertTriangle, CheckCircle, RefreshCw, ArrowRight
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,8 +27,6 @@ const ESTADOS = [
   { id: 'FAENADO', label: 'Faenado', color: 'bg-gray-100 text-gray-700' },
   { id: 'DESPACHADO', label: 'Despachado', color: 'bg-stone-100 text-stone-500' },
 ]
-
-const CORRALES = ['Corral A', 'Corral B', 'Corral C', 'Corral D', 'Corral E1', 'Corral E2']
 
 interface Tropa {
   id: string
@@ -68,75 +65,75 @@ interface Animal {
   motivoBaja?: string
 }
 
-interface CorralStock {
-  corral: string
-  totalCabezas: number
-  tropas: { codigo: string; cantidad: number }[]
+interface CorralDB {
+  id: string
+  nombre: string
+  capacidad: number
+  stockBovinos: number
+  stockEquinos: number
+  observaciones?: string
+  disponible?: number
+  puedeRecibir?: boolean
+  stockActual?: number
 }
 
 interface Operador {
   id: string
   nombre: string
-  nivel: string
+  rol: string
 }
 
 export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
   const [tropas, setTropas] = useState<Tropa[]>([])
-  const [corralesStock, setCorralesStock] = useState<CorralStock[]>([])
+  const [corrales, setCorrales] = useState<CorralDB[]>([])
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [activeTab, setActiveTab] = useState('corrales')
+  const [activeTab, setActiveTab] = useState('pendientes')
   
   // Dialogs
   const [detalleOpen, setDetalleOpen] = useState(false)
-  const [editarOpen, setEditarOpen] = useState(false)
-  const [bajaOpen, setBajaOpen] = useState(false)
   const [moverOpen, setMoverOpen] = useState(false)
-  const [claveSupervisor, setClaveSupervisor] = useState('')
+  const [bajaOpen, setBajaOpen] = useState(false)
   const [tropaSeleccionada, setTropaSeleccionada] = useState<Tropa | null>(null)
   const [animalSeleccionado, setAnimalSeleccionado] = useState<Animal | null>(null)
-  const [editData, setEditData] = useState({
-    cantidadCabezas: 0,
-    corral: '',
-    estado: '',
-    observaciones: ''
-  })
   const [saving, setSaving] = useState(false)
   
   // Mover corral
-  const [corralDestino, setCorralDestino] = useState('')
+  const [corralDestinoId, setCorralDestinoId] = useState('')
   
   // Baja
   const [motivoBaja, setMotivoBaja] = useState('')
 
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    setLoading(true)
     try {
-      const [tropasRes, stockRes] = await Promise.all([
+      const [tropasRes, corralesRes] = await Promise.all([
         fetch('/api/tropas'),
-        fetch('/api/corrales/stock')
+        fetch('/api/tropas/mover?especie=BOVINO')
       ])
       
       const tropasData = await tropasRes.json()
-      const stockData = await stockRes.json()
+      const corralesData = await corralesRes.json()
       
       if (tropasData.success) {
         setTropas(tropasData.data)
       }
       
-      if (stockData.success) {
-        setCorralesStock(stockData.data)
+      if (corralesData.success) {
+        setCorrales(corralesData.data)
       }
     } catch (error) {
       console.error('Error fetching data:', error)
+      toast.error('Error al cargar datos')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   const handleVerDetalle = async (tropa: Tropa) => {
     try {
@@ -151,73 +148,8 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
     }
   }
 
-  const handleEditar = (tropa: Tropa) => {
-    setTropaSeleccionada(tropa)
-    setEditData({
-      cantidadCabezas: tropa.cantidadCabezas,
-      corral: typeof tropa.corral === 'object' ? tropa.corral?.nombre : tropa.corral || '',
-      estado: tropa.estado,
-      observaciones: tropa.observaciones || ''
-    })
-    setClaveSupervisor('')
-    setEditarOpen(true)
-  }
-
-  const handleGuardarEdicion = async () => {
-    if (!claveSupervisor) {
-      toast.error('Ingrese la clave de supervisor')
-      return
-    }
-
-    try {
-      const authRes = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: claveSupervisor })
-      })
-      
-      const authData = await authRes.json()
-      
-      if (!authData.success || (authData.data.nivel !== 'SUPERVISOR' && authData.data.nivel !== 'ADMINISTRADOR')) {
-        toast.error('Clave de supervisor inválida')
-        return
-      }
-    } catch {
-      toast.error('Error al verificar clave')
-      return
-    }
-
-    setSaving(true)
-    try {
-      const res = await fetch('/api/tropas', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: tropaSeleccionada?.id,
-          cantidadCabezas: editData.cantidadCabezas,
-          corral: editData.corral,
-          estado: editData.estado,
-          observaciones: editData.observaciones,
-          operadorEditorId: operador.id
-        })
-      })
-      
-      if (res.ok) {
-        toast.success('Tropa actualizada')
-        setEditarOpen(false)
-        fetchData()
-      } else {
-        toast.error('Error al actualizar')
-      }
-    } catch {
-      toast.error('Error de conexión')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const handleMoverCorral = async () => {
-    if (!tropaSeleccionada || !corralDestino) {
+    if (!tropaSeleccionada || !corralDestinoId) {
       toast.error('Seleccione el corral destino')
       return
     }
@@ -229,17 +161,21 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tropaId: tropaSeleccionada.id,
-          corralDestino
+          corralDestinoId,
+          operadorId: operador.id
         })
       })
       
-      if (res.ok) {
-        toast.success(`Tropa movida a ${corralDestino}`)
+      const data = await res.json()
+      
+      if (data.success) {
+        const corralDestino = corrales.find(c => c.id === corralDestinoId)
+        toast.success(`✅ Tropa ${tropaSeleccionada.codigo} movida a ${corralDestino?.nombre}`, { duration: 5000 })
         setMoverOpen(false)
-        setCorralDestino('')
+        setCorralDestinoId('')
         fetchData()
       } else {
-        toast.error('Error al mover tropa')
+        toast.error(data.error || 'Error al mover tropa')
       }
     } catch {
       toast.error('Error de conexión')
@@ -294,6 +230,9 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
     return true
   })
 
+  // Tropas pendientes de asignar a corral
+  const tropasSinCorral = tropas.filter(t => !t.corralId && t.estado === 'RECIBIDO')
+
   const getEstadoBadge = (estado: string) => {
     const est = ESTADOS.find(e => e.id === estado)
     return (
@@ -304,8 +243,8 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
   }
 
   // Calcular totales
-  const totalAnimales = corralesStock.reduce((acc, c) => acc + c.totalCabezas, 0)
-  const corralesOcupados = corralesStock.filter(c => c.totalCabezas > 0).length
+  const totalEnCorrales = corrales.reduce((acc, c) => acc + c.stockBovinos + c.stockEquinos, 0)
+  const corralesOcupados = corrales.filter(c => c.stockBovinos > 0 || c.stockEquinos > 0).length
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 to-stone-100 p-4 md:p-6">
@@ -314,7 +253,7 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-stone-800">Movimiento de Hacienda</h2>
-            <p className="text-stone-500">Control y seguimiento de tropas y corrales</p>
+            <p className="text-stone-500">Control y asignación de tropas a corrales</p>
           </div>
           <div className="flex items-center gap-4">
             <Button variant="outline" size="sm" onClick={fetchData}>
@@ -323,28 +262,183 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
             </Button>
             <Badge variant="outline" className="text-lg px-4 py-2">
               <Beef className="h-4 w-4 mr-2 text-amber-500" />
-              {totalAnimales} animales en {corralesOcupados} corrales
+              {totalEnCorrales} animales en {corralesOcupados} corrales
             </Badge>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="pendientes" className="relative">
+              Pendientes de Asignación
+              {tropasSinCorral.length > 0 && (
+                <Badge className="ml-2 bg-red-500 text-white">{tropasSinCorral.length}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="corrales">Stock por Corral</TabsTrigger>
-            <TabsTrigger value="tropas">Tropas</TabsTrigger>
-            <TabsTrigger value="animales">Animales</TabsTrigger>
+            <TabsTrigger value="tropas">Todas las Tropas</TabsTrigger>
           </TabsList>
+
+          {/* TROPAS PENDIENTES DE ASIGNACIÓN */}
+          <TabsContent value="pendientes" className="space-y-6">
+            {tropasSinCorral.length === 0 ? (
+              <Card className="border-0 shadow-md">
+                <CardContent className="py-12 text-center">
+                  <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-500 opacity-50" />
+                  <p className="text-lg text-stone-600">No hay tropas pendientes de asignación</p>
+                  <p className="text-sm text-stone-400 mt-1">Todas las tropas tienen corral asignado</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Lista de tropas pendientes */}
+                <Card className="border-0 shadow-md">
+                  <CardHeader className="bg-amber-50 rounded-t-lg">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Beef className="w-5 h-5 text-amber-600" />
+                      Tropas Sin Corral Asignado
+                    </CardTitle>
+                    <CardDescription>
+                      Seleccione una tropa para asignarle corral
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {tropasSinCorral.map((tropa) => (
+                        <div 
+                          key={tropa.id} 
+                          className={`p-4 cursor-pointer hover:bg-stone-50 transition-colors ${
+                            tropaSeleccionada?.id === tropa.id ? 'bg-amber-50 border-l-4 border-amber-500' : ''
+                          }`}
+                          onClick={() => setTropaSeleccionada(tropa)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-mono font-bold text-stone-800">{tropa.codigo}</p>
+                              <p className="text-sm text-stone-500">{tropa.usuarioFaena.nombre}</p>
+                            </div>
+                            <div className="text-right">
+                              <Badge variant="outline" className="text-lg">
+                                {tropa.cantidadCabezas} animales
+                              </Badge>
+                              <p className="text-xs text-stone-400 mt-1">
+                                {tropa.especie}
+                              </p>
+                            </div>
+                          </div>
+                          {tropa.tiposAnimales && tropa.tiposAnimales.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {tropa.tiposAnimales.map((t, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {t.tipoAnimal}: {t.cantidad}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Selector de corral */}
+                <Card className="border-0 shadow-md">
+                  <CardHeader className="bg-blue-50 rounded-t-lg">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Warehouse className="w-5 h-5 text-blue-600" />
+                      Asignar a Corral
+                    </CardTitle>
+                    <CardDescription>
+                      {tropaSeleccionada 
+                        ? `Tropa ${tropaSeleccionada.codigo} - ${tropaSeleccionada.cantidadCabezas} animales`
+                        : 'Seleccione una tropa primero'
+                      }
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    {!tropaSeleccionada ? (
+                      <div className="py-8 text-center text-stone-400">
+                        <ArrowRight className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p>Seleccione una tropa de la izquierda</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {corrales.map((corral) => {
+                          const isSelected = corralDestinoId === corral.id
+                          const canReceive = (corral.disponible || 0) >= tropaSeleccionada.cantidadCabezas
+                          
+                          return (
+                            <div
+                              key={corral.id}
+                              onClick={() => canReceive && setCorralDestinoId(corral.id)}
+                              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                                isSelected 
+                                  ? 'border-blue-500 bg-blue-50' 
+                                  : canReceive 
+                                    ? 'border-gray-200 hover:border-gray-300 hover:bg-stone-50' 
+                                    : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-medium text-stone-800">{corral.nombre}</span>
+                                {canReceive ? (
+                                  <Badge className="bg-green-100 text-green-700">Disponible</Badge>
+                                ) : (
+                                  <Badge variant="destructive">Sin capacidad</Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-sm">
+                                <div>
+                                  <p className="text-stone-400">Capacidad</p>
+                                  <p className="font-bold">{corral.capacidad}</p>
+                                </div>
+                                <div>
+                                  <p className="text-stone-400">Ocupado</p>
+                                  <p className="font-bold">{corral.stockActual || 0}</p>
+                                </div>
+                                <div>
+                                  <p className="text-stone-400">Disponible</p>
+                                  <p className={`font-bold ${canReceive ? 'text-green-600' : 'text-red-600'}`}>
+                                    {corral.disponible || 0}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        
+                        <Button
+                          onClick={handleMoverCorral}
+                          disabled={saving || !corralDestinoId}
+                          className="w-full h-12 bg-blue-600 hover:bg-blue-700 mt-4"
+                        >
+                          {saving ? 'Asignando...' : (
+                            <>
+                              <Move className="w-4 h-4 mr-2" />
+                              Asignar Corral
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
 
           {/* STOCK POR CORRAL */}
           <TabsContent value="corrales" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {CORRALES.map((corral) => {
-                const stock = corralesStock.find(c => c.corral === corral)
-                const isEmpty = !stock || stock.totalCabezas === 0
+              {corrales.map((corral) => {
+                const isEmpty = corral.stockBovinos === 0 && corral.stockEquinos === 0
+                const ocupacion = corral.capacidad > 0 
+                  ? Math.round(((corral.stockActual || 0) / corral.capacidad) * 100) 
+                  : 0
                 
                 return (
                   <Card 
-                    key={corral} 
+                    key={corral.id} 
                     className={`border-0 shadow-md cursor-pointer transition-all hover:shadow-lg ${
                       isEmpty ? 'opacity-60' : ''
                     }`}
@@ -353,10 +447,13 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg flex items-center gap-2">
                           <Warehouse className={`w-5 h-5 ${isEmpty ? 'text-stone-400' : 'text-amber-500'}`} />
-                          {corral}
+                          {corral.nombre}
                         </CardTitle>
-                        <Badge variant={isEmpty ? 'secondary' : 'default'} className={isEmpty ? '' : 'bg-green-600'}>
-                          {isEmpty ? 'Vacío' : 'Ocupado'}
+                        <Badge 
+                          variant={isEmpty ? 'secondary' : 'default'} 
+                          className={isEmpty ? '' : 'bg-green-600'}
+                        >
+                          {isEmpty ? 'Vacío' : `${ocupacion}%`}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -365,23 +462,35 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                         <div className="text-center py-4 text-stone-400">
                           <Warehouse className="w-8 h-8 mx-auto mb-2 opacity-50" />
                           <p>Sin animales</p>
+                          <p className="text-xs">Capacidad: {corral.capacidad}</p>
                         </div>
                       ) : (
                         <>
-                          <div className="text-center mb-4">
-                            <p className="text-3xl font-bold text-stone-800">{stock?.totalCabezas || 0}</p>
-                            <p className="text-sm text-stone-500">cabezas</p>
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center">
+                              <p className="text-2xl font-bold text-stone-800">{corral.stockBovinos}</p>
+                              <p className="text-xs text-stone-500">Bovinos</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-2xl font-bold text-stone-800">{corral.stockEquinos}</p>
+                              <p className="text-xs text-stone-500">Equinos</p>
+                            </div>
                           </div>
                           
-                          <div className="space-y-2">
-                            <p className="text-xs text-stone-500 font-medium">Tropas:</p>
-                            {stock?.tropas.map((t, i) => (
-                              <div key={i} className="flex justify-between text-sm bg-stone-50 p-2 rounded">
-                                <span className="font-mono font-medium">{t.codigo}</span>
-                                <span className="text-stone-600">{t.cantidad} cab.</span>
-                              </div>
-                            ))}
+                          {/* Barra de ocupación */}
+                          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                ocupacion >= 90 ? 'bg-red-500' : 
+                                ocupacion >= 70 ? 'bg-amber-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min(ocupacion, 100)}%` }}
+                            />
                           </div>
+                          
+                          <p className="text-xs text-stone-500 text-center">
+                            {corral.disponible} disponibles de {corral.capacidad}
+                          </p>
                         </>
                       )}
                     </CardContent>
@@ -401,7 +510,7 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
               <CardContent className="p-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
-                    <p className="text-3xl font-bold text-stone-800">{totalAnimales}</p>
+                    <p className="text-3xl font-bold text-stone-800">{totalEnCorrales}</p>
                     <p className="text-sm text-stone-500">Total Animales</p>
                   </div>
                   <div className="text-center">
@@ -409,21 +518,19 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                     <p className="text-sm text-stone-500">Corrales Ocupados</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-bold text-stone-400">{CORRALES.length - corralesOcupados}</p>
+                    <p className="text-3xl font-bold text-stone-400">{corrales.length - corralesOcupados}</p>
                     <p className="text-sm text-stone-500">Corrales Vacíos</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-bold text-red-600">
-                      {tropas.filter(t => t.estado === 'FALLECIDO').reduce((acc, t) => acc + t.cantidadCabezas, 0)}
-                    </p>
-                    <p className="text-sm text-stone-500">Bajas</p>
+                    <p className="text-3xl font-bold text-red-600">{tropasSinCorral.length}</p>
+                    <p className="text-sm text-stone-500">Sin Asignar</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* TROPAS */}
+          {/* TODAS LAS TROPAS */}
           <TabsContent value="tropas" className="space-y-6">
             {/* Filtros */}
             <Card className="border-0 shadow-md">
@@ -455,27 +562,6 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
               </CardContent>
             </Card>
 
-            {/* Resumen por estado */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {ESTADOS.slice(0, 4).map((estado) => {
-                const count = tropas.filter(t => t.estado === estado.id).length
-                return (
-                  <Card 
-                    key={estado.id} 
-                    className="border-0 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
-                    onClick={() => setFiltroEstado(estado.id)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-sm px-2 py-1 rounded ${estado.color}`}>{estado.label}</span>
-                        <span className="text-2xl font-bold">{count}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-
             {/* Tabla de tropas */}
             <Card className="border-0 shadow-md">
               <CardHeader className="bg-stone-50 rounded-t-lg">
@@ -496,176 +582,76 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                     <p>No hay tropas que mostrar</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tropa</TableHead>
-                        <TableHead>Usuario Faena</TableHead>
-                        <TableHead>Especie</TableHead>
-                        <TableHead>Tipos</TableHead>
-                        <TableHead>Corral</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Peso Neto</TableHead>
-                        <TableHead>Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {tropasFiltradas.map((tropa) => (
-                        <TableRow key={tropa.id} className="hover:bg-stone-50">
-                          <TableCell>
-                            <div>
-                              <span className="font-mono font-bold">{tropa.codigo}</span>
-                              <div className="text-xs text-stone-400">
-                                {new Date(tropa.fechaRecepcion).toLocaleDateString('es-AR')}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{tropa.usuarioFaena.nombre}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{tropa.especie}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-xs">
-                              {tropa.tiposAnimales?.map((t, i) => (
-                                <div key={i}>{t.tipoAnimal}: {t.cantidad}</div>
-                              ))}
-                              <div className="font-bold">Total: {tropa.cantidadCabezas}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{typeof tropa.corral === 'object' ? tropa.corral?.nombre : tropa.corral || '-'}</TableCell>
-                          <TableCell>{getEstadoBadge(tropa.estado)}</TableCell>
-                          <TableCell>
-                            {tropa.pesoTotalIndividual 
-                              ? `${tropa.pesoTotalIndividual.toLocaleString()} kg`
-                              : tropa.pesoNeto 
-                                ? `${tropa.pesoNeto.toLocaleString()} kg`
-                                : '-'
-                            }
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => handleVerDetalle(tropa)}
-                                title="Ver detalle"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => handleEditar(tropa)}
-                                title="Editar"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                onClick={() => {
-                                  setTropaSeleccionada(tropa)
-                                  setMoverOpen(true)
-                                }}
-                                title="Mover de corral"
-                                className="text-blue-600"
-                              >
-                                <Move className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
+                  <div className="max-h-[600px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-white">
+                        <TableRow>
+                          <TableHead>Tropa</TableHead>
+                          <TableHead>Usuario Faena</TableHead>
+                          <TableHead>Especie</TableHead>
+                          <TableHead>Cantidad</TableHead>
+                          <TableHead>Corral</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead>Acciones</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ANIMALES */}
-          <TabsContent value="animales" className="space-y-6">
-            <Card className="border-0 shadow-md">
-              <CardHeader className="bg-stone-50 rounded-t-lg">
-                <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                  <Beef className="w-5 h-5" />
-                  Animales Individuales
-                </CardTitle>
-                <CardDescription>
-                  Gestión de animales por unidad - baja por muerte, movimientos
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {tropas.length === 0 ? (
-                  <div className="p-8 text-center text-stone-400">
-                    <Beef className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No hay animales registrados</p>
-                  </div>
-                ) : (
-                  <div className="divide-y">
-                    {tropas.filter(t => t.animales && t.animales.length > 0).map((tropa) => (
-                      <div key={tropa.id} className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <span className="font-mono font-bold text-stone-800">{tropa.codigo}</span>
-                            <span className="text-sm text-stone-500 ml-2">- {tropa.usuarioFaena.nombre}</span>
-                          </div>
-                          <Badge variant="outline">{tropa.animales?.length || 0} animales</Badge>
-                        </div>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Nº</TableHead>
-                              <TableHead>Código</TableHead>
-                              <TableHead>Caravana</TableHead>
-                              <TableHead>Tipo</TableHead>
-                              <TableHead>Raza</TableHead>
-                              <TableHead>Peso</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead>Acciones</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {tropa.animales?.map((animal) => (
-                              <TableRow key={animal.id} className={animal.estado === 'FALLECIDO' ? 'bg-red-50' : ''}>
-                                <TableCell>{animal.numero}</TableCell>
-                                <TableCell className="font-mono">{animal.codigo}</TableCell>
-                                <TableCell>{animal.caravana || '-'}</TableCell>
-                                <TableCell><Badge variant="outline">{animal.tipoAnimal}</Badge></TableCell>
-                                <TableCell>{animal.raza || '-'}</TableCell>
-                                <TableCell>{animal.pesoVivo?.toLocaleString() || '-'} kg</TableCell>
-                                <TableCell>
-                                  {animal.estado === 'FALLECIDO' ? (
-                                    <Badge className="bg-red-100 text-red-700">
-                                      <Skull className="w-3 h-3 mr-1" />
-                                      Fallecido
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="outline">{animal.estado}</Badge>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {animal.estado !== 'FALLECIDO' && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => {
-                                        setAnimalSeleccionado(animal)
-                                        setBajaOpen(true)
-                                      }}
-                                      className="text-red-600 hover:text-red-700"
-                                    >
-                                      <Skull className="w-4 h-4 mr-1" />
-                                      Baja
-                                    </Button>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ))}
+                      </TableHeader>
+                      <TableBody>
+                        {tropasFiltradas.map((tropa) => (
+                          <TableRow key={tropa.id} className="hover:bg-stone-50">
+                            <TableCell>
+                              <div>
+                                <span className="font-mono font-bold">{tropa.codigo}</span>
+                                <div className="text-xs text-stone-400">
+                                  {new Date(tropa.fechaRecepcion).toLocaleDateString('es-AR')}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{tropa.usuarioFaena.nombre}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{tropa.especie}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-bold">{tropa.cantidadCabezas}</span>
+                              <span className="text-stone-400 text-sm ml-1">cab.</span>
+                            </TableCell>
+                            <TableCell>
+                              {tropa.corralId ? (
+                                <Badge className="bg-blue-100 text-blue-700">
+                                  {typeof tropa.corral === 'object' ? tropa.corral?.nombre : tropa.corral}
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive">Sin asignar</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>{getEstadoBadge(tropa.estado)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  onClick={() => handleVerDetalle(tropa)}
+                                  title="Ver detalle"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  onClick={() => {
+                                    setTropaSeleccionada(tropa)
+                                    setMoverOpen(true)
+                                  }}
+                                  title="Mover de corral"
+                                  className="text-blue-600"
+                                >
+                                  <Move className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>
@@ -703,7 +689,12 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                   </div>
                   <div>
                     <span className="text-stone-500">Corral:</span>
-                    <p className="font-medium">{tropaSeleccionada.corral || '-'}</p>
+                    <p className="font-medium">
+                      {tropaSeleccionada.corralId 
+                        ? (typeof tropaSeleccionada.corral === 'object' ? tropaSeleccionada.corral?.nombre : tropaSeleccionada.corral)
+                        : 'Sin asignar'
+                      }
+                    </p>
                   </div>
                   <div>
                     <span className="text-stone-500">DTE:</span>
@@ -729,118 +720,52 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
                   </div>
                 )}
 
-                <div className="bg-stone-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-stone-500 text-xs">Peso Bruto</p>
-                      <p className="font-bold">{tropaSeleccionada.pesoBruto?.toLocaleString() || '-'} kg</p>
-                    </div>
-                    <div>
-                      <p className="text-stone-500 text-xs">Peso Tara</p>
-                      <p className="font-bold">{tropaSeleccionada.pesoTara?.toLocaleString() || '-'} kg</p>
-                    </div>
-                    <div>
-                      <p className="text-stone-500 text-xs">Peso Neto</p>
-                      <p className="font-bold text-green-600">{tropaSeleccionada.pesoNeto?.toLocaleString() || '-'} kg</p>
+                {/* Animales individuales */}
+                {tropaSeleccionada.animales && tropaSeleccionada.animales.length > 0 && (
+                  <div>
+                    <span className="text-stone-500 text-sm">Animales Individuales ({tropaSeleccionada.animales.length}):</span>
+                    <div className="max-h-40 overflow-y-auto mt-2 border rounded-lg p-2">
+                      <Table size="sm">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">#</TableHead>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Estado</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {tropaSeleccionada.animales.map((a) => (
+                            <TableRow key={a.id}>
+                              <TableCell>{a.numero}</TableCell>
+                              <TableCell className="font-mono text-xs">{a.codigo}</TableCell>
+                              <TableCell><Badge variant="outline" className="text-xs">{a.tipoAnimal}</Badge></TableCell>
+                              <TableCell>
+                                {a.estado === 'FALLECIDO' ? (
+                                  <Badge className="bg-red-100 text-red-700 text-xs">
+                                    <Skull className="w-3 h-3 mr-1" />
+                                    Fallecido
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs">{a.estado}</Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <span className="text-stone-500 text-sm">Estado actual:</span>
                   <div className="mt-2">{getEstadoBadge(tropaSeleccionada.estado)}</div>
                 </div>
-
-                {tropaSeleccionada.observaciones && (
-                  <div>
-                    <span className="text-stone-500 text-sm">Observaciones:</span>
-                    <p className="bg-stone-50 p-2 rounded mt-1">{tropaSeleccionada.observaciones}</p>
-                  </div>
-                )}
               </div>
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setDetalleOpen(false)}>Cerrar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog Editar */}
-        <Dialog open={editarOpen} onOpenChange={setEditarOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Editar Tropa</DialogTitle>
-              <DialogDescription>
-                Se requiere clave de supervisor para realizar cambios
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lock className="w-4 h-4 text-red-600" />
-                  <span className="font-medium text-red-700">Autorización Requerida</span>
-                </div>
-                <Label>Clave de Supervisor</Label>
-                <Input
-                  type="password"
-                  value={claveSupervisor}
-                  onChange={(e) => setClaveSupervisor(e.target.value)}
-                  placeholder="••••••"
-                  className="mt-1"
-                />
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Cantidad de Cabezas</Label>
-                  <Input
-                    type="number"
-                    value={editData.cantidadCabezas || ''}
-                    onChange={(e) => setEditData({...editData, cantidadCabezas: parseInt(e.target.value) || 0})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Corral</Label>
-                  <Select value={editData.corral} onValueChange={(v) => setEditData({...editData, corral: v})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CORRALES.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Estado</Label>
-                  <Select value={editData.estado} onValueChange={(v) => setEditData({...editData, estado: v})}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ESTADOS.map((e) => (
-                        <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Observaciones</Label>
-                  <Textarea
-                    value={editData.observaciones}
-                    onChange={(e) => setEditData({...editData, observaciones: e.target.value})}
-                    rows={2}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditarOpen(false)}>Cancelar</Button>
-              <Button onClick={handleGuardarEdicion} disabled={saving} className="bg-amber-500 hover:bg-amber-600">
-                <Save className="w-4 h-4 mr-2" />
-                Guardar Cambios
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -858,7 +783,12 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
               <div className="bg-stone-50 p-4 rounded-lg">
                 <div className="flex justify-between">
                   <span className="text-stone-500">Corral Actual:</span>
-                  <span className="font-medium">{tropaSeleccionada?.corral || 'Sin asignar'}</span>
+                  <span className="font-medium">
+                    {tropaSeleccionada?.corralId 
+                      ? (typeof tropaSeleccionada?.corral === 'object' ? tropaSeleccionada?.corral?.nombre : tropaSeleccionada?.corral)
+                      : 'Sin asignar'
+                    }
+                  </span>
                 </div>
                 <div className="flex justify-between mt-2">
                   <span className="text-stone-500">Cabezas:</span>
@@ -868,21 +798,29 @@ export function MovimientoHaciendaModule({ operador }: { operador: Operador }) {
               
               <div className="space-y-2">
                 <Label>Corral Destino *</Label>
-                <Select value={corralDestino} onValueChange={setCorralDestino}>
+                <Select value={corralDestinoId} onValueChange={setCorralDestinoId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {CORRALES.filter(c => c !== tropaSeleccionada?.corral).map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
+                    {corrales
+                      .filter(c => c.id !== tropaSeleccionada?.corralId)
+                      .map((c) => (
+                        <SelectItem 
+                          key={c.id} 
+                          value={c.id}
+                          disabled={!c.puedeRecibir}
+                        >
+                          {c.nombre} ({c.disponible} disponibles)
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setMoverOpen(false)}>Cancelar</Button>
-              <Button onClick={handleMoverCorral} disabled={saving || !corralDestino} className="bg-blue-600 hover:bg-blue-700">
+              <Button onClick={handleMoverCorral} disabled={saving || !corralDestinoId} className="bg-blue-600 hover:bg-blue-700">
                 <Move className="w-4 h-4 mr-2" />
                 Mover
               </Button>

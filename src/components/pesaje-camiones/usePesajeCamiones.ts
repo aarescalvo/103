@@ -249,8 +249,9 @@ export function usePesajeCamiones({ operadorId, onTropaCreada }: UsePesajeCamion
       
       if (data.success) {
         if (tipoPesaje === 'INGRESO_HACIENDA') {
-          toast.success(`Ticket #${String(data.data.numeroTicket).padStart(6, '0')} creado - Tropa: ${data.data.tropa?.codigo}`, { duration: 5000 })
-          toast.info('El pesaje quedará abierto hasta registrar la tara')
+          const animalesCreados = data.data.animalesCreados || 0
+          toast.success(`✅ Tropa ${data.data.tropa?.codigo} creada con ${animalesCreados} animales individuales`, { duration: 6000 })
+          toast.info(`Ticket #${String(data.data.numeroTicket).padStart(6, '0')} - Pendiente de tara`)
         } else {
           toast.success(`Ticket #${String(data.data.numeroTicket).padStart(6, '0')} creado`)
         }

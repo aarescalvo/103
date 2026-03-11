@@ -693,3 +693,47 @@ Stage Summary:
 - Sistema compilando sin warnings
 - Listo para push a GitHub
 
+---
+Task ID: 39
+Agent: main
+Task: Implementar flujo completo de gestión de animales y corrales
+
+Work Log:
+- MODIFICACIÓN API PESAJE CAMIÓN:
+  * Creados animales individuales automáticamente al recibir tropa
+  * Cada animal tiene código único: B20260001-001, B20260001-002, etc.
+  * Se distribuyen por tipo según DTE (ej: 10 VA, 5 NO, 5 VQ)
+  * Animales creados con estado RECIBIDO, sin corral asignado
+
+- NUEVA API MOVIMIENTO DE CORRALES (/api/tropas/mover):
+  * POST: Mueve tropa completa a corral con validación de capacidad
+  * GET: Lista corrales con stock disponible
+  * Transacción atómica: decrementa origen, incrementa destino
+  * Registra movimiento y auditoría
+
+- INTERFAZ PESAJE CAMIONES:
+  * Muestra confirmación de animales creados al guardar
+  * Toast con cantidad de animales generados
+  * Corrales muestran disponibilidad en tiempo real
+
+- INTERFAZ MOVIMIENTO HACIENDA:
+  * Nueva pestaña "Pendientes de Asignación" para tropas sin corral
+  * Cards de corrales con capacidad/ocupación/disponibilidad
+  * Selector de corral con validación de capacidad
+  * Indicador visual de corrales disponibles vs sin capacidad
+  * Resumen de stock total
+
+- INTERFAZ PESAJE INDIVIDUAL:
+  * Mantiene funcionalidad existente
+  * Permite corregir tipo de animal al pesar
+  * Compara animales declarados vs pesados
+
+Stage Summary:
+- Flujo completo operativo:
+  1. Pesaje Camión → Crea tropa + animales individuales
+  2. Movimiento Hacienda → Asigna tropa a corral (valida capacidad)
+  3. Pesaje Individual → Pesa cada animal con corrección de tipo
+- Stock de corrales actualizado automáticamente
+- Validaciones de capacidad funcionando
+- Sistema listo para producción
+

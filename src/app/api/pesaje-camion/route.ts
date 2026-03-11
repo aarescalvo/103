@@ -341,6 +341,77 @@ export async function POST(request: NextRequest) {
         console.log('[POST pesaje-camion] Todos los tipos insertados')
       }
       
+      // ========================================
+      // CREAR ANIMALES INDIVIDUALES
+      // ========================================
+      console.log('[POST pesaje-camion] === CREANDO ANIMALES INDIVIDUALES ===')
+      
+      const totalAnimales = parseInt(cantidadCabezas) || 0
+      const codigoBase = tropa.codigo.replace(/ /g, '') // "B20260001"
+      
+      // Distribuir tipos de animales
+      interface TipoAnimalItem { tipoAnimal: string; cantidad: number }
+      const tiposDistribucion: TipoAnimalItem[] = (tiposAnimales && Array.isArray(tiposAnimales)) 
+        ? tiposAnimales.filter((t: TipoAnimalItem) => t.cantidad > 0)
+        : []
+      
+      let animalNumero = 1
+      let animalesCreados = 0
+      
+      // Crear animales distribuidos por tipo
+      for (const tipoInfo of tiposDistribucion) {
+        const cantidadTipo = parseInt(tipoInfo.cantidad) || 0
+        console.log(`[POST pesaje-camion] Creando ${cantidadTipo} animales tipo ${tipoInfo.tipoAnimal}`)
+        
+        for (let i = 0; i < cantidadTipo; i++) {
+          const codigoAnimal = `${codigoBase}-${String(animalNumero).padStart(3, '0')}`
+          
+          try {
+            await db.animal.create({
+              data: {
+                tropaId: tropa.id,
+                numero: animalNumero,
+                codigo: codigoAnimal,
+                tipoAnimal: tipoInfo.tipoAnimal as TipoAnimal,
+                estado: 'RECIBIDO',
+                corralId: validCorralId || null
+              }
+            })
+            animalesCreados++
+            animalNumero++
+          } catch (animalError) {
+            console.error(`[POST pesaje-camion] Error creando animal ${codigoAnimal}:`, animalError)
+          }
+        }
+      }
+      
+      // Si no había tipos definidos pero sí cantidad total, crear animales genéricos
+      if (tiposDistribucion.length === 0 && totalAnimales > 0) {
+        console.log(`[POST pesaje-camion] Creando ${totalAnimales} animales sin tipo definido`)
+        
+        for (let i = 1; i <= totalAnimales; i++) {
+          const codigoAnimal = `${codigoBase}-${String(i).padStart(3, '0')}`
+          
+          try {
+            await db.animal.create({
+              data: {
+                tropaId: tropa.id,
+                numero: i,
+                codigo: codigoAnimal,
+                tipoAnimal: 'VA' as TipoAnimal, // Default, se corrige al pesar
+                estado: 'RECIBIDO',
+                corralId: validCorralId || null
+              }
+            })
+            animalesCreados++
+          } catch (animalError) {
+            console.error(`[POST pesaje-camion] Error creando animal ${codigoAnimal}:`, animalError)
+          }
+        }
+      }
+      
+      console.log(`[POST pesaje-camion] ✅ ${animalesCreados} animales individuales creados`)
+      
       // Re-fetch tropa with tiposAnimales
       const tropaCompleta = await db.tropa.findUnique({
         where: { id: tropa.id },
@@ -348,7 +419,10 @@ export async function POST(request: NextRequest) {
           productor: true,
           usuarioFaena: true,
           tiposAnimales: true,
-          corral: true
+          corral: true,
+          animales: {
+            select: { id: true, numero: true, codigo: true, tipoAnimal: true, estado: true }
+          }
         }
       })
       
@@ -361,6 +435,7 @@ export async function POST(request: NextRequest) {
           chofer: pesaje.choferNombre,
           dniChofer: pesaje.choferDni,
           descripcion: pesaje.observaciones,
+          animalesCreados,
           tropa: tropaCompleta ? {
             id: tropaCompleta.id,
             codigo: tropaCompleta.codigo,
@@ -369,9 +444,11 @@ export async function POST(request: NextRequest) {
             especie: tropaCompleta.especie,
             cantidadCabezas: tropaCompleta.cantidadCabezas,
             corral: tropaCompleta.corral?.nombre || null,
+            corralId: tropaCompleta.corralId,
             dte: tropaCompleta.dte,
             guia: tropaCompleta.guia,
             tiposAnimales: tropaCompleta.tiposAnimales,
+            animales: tropaCompleta.animales,
             observaciones: tropaCompleta.observaciones
           } : null
         }
